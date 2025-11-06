@@ -1,5 +1,7 @@
+import logging
 import os
 import random
+import sys
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -11,6 +13,13 @@ from .api_client import (
 )
 from .config import settings
 from .discord_notifier import format_discord_message, send_discord_message
+
+# Configure the logger
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+)
 
 
 def should_send_notification() -> bool:
@@ -40,10 +49,10 @@ def main():
 
     # --- Initialization for the first run ---
     if not os.path.exists(settings.CACHE_FILE_PATH):
-        print("Cache file not found. Performing initial fetch to populate cache...")
+        logging.info("Cache file not found. Performing initial fetch to populate cache...")
         initial_available_slots = get_available_slots(settings.COURTS)
         save_available_slots(initial_available_slots, settings.CACHE_FILE_PATH)
-        print(
+        logging.info(
             f"Initial cache populated with {len(initial_available_slots)} available slots."
         )
         # Don't send a notification on the very first run, but create the timestamp file
@@ -52,7 +61,7 @@ def main():
 
     # --- Main polling loop ---
     while True:
-        print("Checking for available slots...")
+        logging.info("Checking for available slots...")
         current_available_slots = get_available_slots(settings.COURTS)
 
         previous_available_slots = load_previous_available_slots(
@@ -76,7 +85,7 @@ def main():
 
         if future_newly_available_slots:
             if should_send_notification():
-                print(
+                logging.info(
                     f"Found {len(future_newly_available_slots)} newly available slots in the future!"
                 )
                 message_body = format_discord_message(
@@ -84,13 +93,13 @@ def main():
                 )
                 send_discord_message(message_body)
             else:
-                print("Found new slots, but this is the first run of the day. Not sending a notification.")
+                logging.info("Found new slots, but this is the first run of the day. Not sending a notification.")
 
             # We always update the timestamp, regardless of whether we sent a notification or not
             update_notification_timestamp()
 
         else:
-            print("No new slots have become available in the future.")
+            logging.info("No new slots have become available in the future.")
 
         # Save the current state for the next run
         save_available_slots(current_available_slots, settings.CACHE_FILE_PATH)
@@ -99,7 +108,7 @@ def main():
         sleep_duration = (
             settings.POLLING_INTERVAL_MINUTES * 60
         ) + random.randint(0, settings.POLLING_RANDOM_DELAY_SECONDS)
-        print(f"Waiting for {sleep_duration / 60:.2f} minutes before next check...")
+        logging.info(f"Waiting for {sleep_duration / 60:.2f} minutes before next check...")
         time.sleep(sleep_duration)
 
 
