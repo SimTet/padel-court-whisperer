@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "padel-court-whisperer"
+version = "0.1.0"
+description = "checking, updating and communicating court availabilities to your friends"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "curl-cffi>=0.13.0",
+    "pydantic>=2.12.4",
+    "pydantic-settings>=2.11.0",
+    "requests>=2.32.5",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+dev = ["ruff"]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+]
