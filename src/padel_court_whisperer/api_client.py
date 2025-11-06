@@ -58,19 +58,23 @@ def get_unavailable_slots_from_response(api_response: Dict[str, Any]) -> Set[Tup
 
 
 def get_all_possible_slots(
-    target_date: str,
+    start_date: datetime,
+    num_days: int,
     courts: Dict[int, str],
     start_time_hour: int = 8,
     end_time_hour: int = 21,
 ) -> Set[Tuple[str, str, int]]:
     """
-    Generates all possible slots for a given date, courts, and time range.
+    Generates all possible slots for a given number of days from a start date.
     """
     all_possible_slots = set()
-    for court_id in courts:
-        for hour in range(start_time_hour, end_time_hour + 1):
-            time_str = f"{hour:02d}00"
-            all_possible_slots.add((target_date, time_str, court_id))
+    for i in range(num_days):
+        current_date = start_date + timedelta(days=i)
+        date_str = current_date.strftime("%Y-%m-%d")
+        for court_id in courts:
+            for hour in range(start_time_hour, end_time_hour + 1):
+                time_str = f"{hour:02d}00"
+                all_possible_slots.add((date_str, time_str, court_id))
     return all_possible_slots
 
 
@@ -87,9 +91,9 @@ def get_available_slots(courts: Dict[int, str]) -> Set[Tuple[str, str, int]]:
     berlin_tz = ZoneInfo("Europe/Berlin")
     current_datetime_berlin = datetime.now(berlin_tz)
     all_unavailable_slots = set()
-    all_possible_slots = set()
 
-    for i in range(6):  # Check for the next 6 weeks
+    num_weeks = 6
+    for i in range(num_weeks):  # Check for the next 6 weeks
         check_date = current_datetime_berlin + timedelta(weeks=i)
         start_date = check_date.strftime("%Y-%m-%d")
         slots_data = get_slots(
@@ -101,11 +105,9 @@ def get_available_slots(courts: Dict[int, str]) -> Set[Tuple[str, str, int]]:
         if slots_data:
             all_unavailable_slots.update(get_unavailable_slots_from_response(slots_data))
 
-        # Since the API returns slots for one week, we need to generate all possible slots for 7 days
-        for j in range(7):
-            day_to_check = check_date + timedelta(days=j)
-            date_str = day_to_check.strftime("%Y-%m-%d")
-            all_possible_slots.update(get_all_possible_slots(date_str, courts))
+    all_possible_slots = get_all_possible_slots(
+        current_datetime_berlin, num_weeks * 7, courts
+    )
 
     return all_possible_slots - all_unavailable_slots
 
