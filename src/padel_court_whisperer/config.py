@@ -18,7 +18,6 @@ class Settings(BaseSettings):
 
     # Cache settings
     CACHE_FILE_PATH: str = "data/available_slots.json"
-    LAST_NOTIFICATION_TIMESTAMP_FILE: str = "data/last_notification_timestamp.txt"
 
     class Config:
         env_file = ".env"

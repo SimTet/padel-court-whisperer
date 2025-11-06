@@ -18,58 +18,40 @@ from .discord_notifier import format_discord_message, send_discord_message
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
-
-
-def should_send_notification() -> bool:
-    """Checks if a notification should be sent based on the timestamp of the last notification."""
-    if not os.path.exists(settings.LAST_NOTIFICATION_TIMESTAMP_FILE):
-        return False  # Don't send on first run ever
-
-    with open(settings.LAST_NOTIFICATION_TIMESTAMP_FILE, "r") as f:
-        last_timestamp_str = f.read().strip()
-
-    if not last_timestamp_str:
-        return False  # Don't send if the file is empty
-
-    last_timestamp = datetime.fromisoformat(last_timestamp_str)
-    return last_timestamp.date() == datetime.now().date()
-
-
-def update_notification_timestamp():
-    """Updates the timestamp of the last notification."""
-    with open(settings.LAST_NOTIFICATION_TIMESTAMP_FILE, "w") as f:
-        f.write(datetime.now().isoformat())
 
 
 def main():
     """Main function to run the polling loop."""
     berlin_tz = ZoneInfo("Europe/Berlin")
 
-    # --- Initialization for the first run ---
-    if not os.path.exists(settings.CACHE_FILE_PATH):
-        logging.info("Cache file not found. Performing initial fetch to populate cache...")
-        initial_available_slots = get_available_slots(settings.COURTS)
-        save_available_slots(initial_available_slots, settings.CACHE_FILE_PATH)
-        logging.info(
-            f"Initial cache populated with {len(initial_available_slots)} available slots."
-        )
-        # Don't send a notification on the very first run, but create the timestamp file
-        update_notification_timestamp()
-        time.sleep(5)
-
     # --- Main polling loop ---
     while True:
         logging.info("Checking for available slots...")
+
+        # Check cache file age to see if we should notify
+        cache_is_stale = True
+        if os.path.exists(settings.CACHE_FILE_PATH):
+            cache_mtime = os.path.getmtime(settings.CACHE_FILE_PATH)
+            # If cache is older than twice the polling interval, consider it stale
+            if (time.time() - cache_mtime) < (
+                settings.POLLING_INTERVAL_MINUTES * 60 * 2
+            ):
+                cache_is_stale = False
+
         current_available_slots = get_available_slots(settings.COURTS)
 
         previous_available_slots = load_previous_available_slots(
             settings.CACHE_FILE_PATH
         )
 
-        # Find newly available slots
+        # Find newly available slots and taken slots
         newly_available_slots = current_available_slots - previous_available_slots
+        taken_slots = previous_available_slots - current_available_slots
+
+        if taken_slots:
+            logging.info(f"{len(taken_slots)} slots have been taken since last check.")
 
         # Filter out past slots
         future_newly_available_slots = set()
@@ -84,7 +66,7 @@ def main():
                 future_newly_available_slots.add(slot)
 
         if future_newly_available_slots:
-            if should_send_notification():
+            if not cache_is_stale:
                 logging.info(
                     f"Found {len(future_newly_available_slots)} newly available slots in the future!"
                 )
@@ -93,10 +75,9 @@ def main():
                 )
                 send_discord_message(message_body)
             else:
-                logging.info("Found new slots, but this is the first run of the day. Not sending a notification.")
-
-            # We always update the timestamp, regardless of whether we sent a notification or not
-            update_notification_timestamp()
+                logging.info(
+                    f"Found {len(future_newly_available_slots)} new slots, but cache is stale. Not sending a notification to avoid spam."
+                )
 
         else:
             logging.info("No new slots have become available in the future.")
@@ -108,7 +89,9 @@ def main():
         sleep_duration = (
             settings.POLLING_INTERVAL_MINUTES * 60
         ) + random.randint(0, settings.POLLING_RANDOM_DELAY_SECONDS)
-        logging.info(f"Waiting for {sleep_duration / 60:.2f} minutes before next check...")
+        logging.info(
+            f"Waiting for {sleep_duration / 60:.2f} minutes before next check..."
+        )
         time.sleep(sleep_duration)
 
 
