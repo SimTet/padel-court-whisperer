@@ -3,7 +3,7 @@ import os
 import random
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .api_client import (
@@ -28,7 +28,30 @@ def main():
 
     # --- Main polling loop ---
     while True:
+        current_datetime_berlin = datetime.now(berlin_tz)
+        current_hour = current_datetime_berlin.hour
+
+        # Pause during the night
+        if current_hour >= 23 or current_hour < 6:
+            wakeup_time = (current_datetime_berlin + timedelta(days=1)).replace(
+                hour=6, minute=0, second=0, microsecond=0
+            )
+            if current_hour < 6:
+                wakeup_time = current_datetime_berlin.replace(
+                    hour=6, minute=0, second=0, microsecond=0
+                )
+
+            sleep_duration = (wakeup_time - current_datetime_berlin).total_seconds()
+            sleep_duration += random.randint(0, settings.POLLING_RANDOM_DELAY_SECONDS)
+            logging.info(
+                f"It's nighttime. Sleeping for {sleep_duration / 3600:.2f} hours until {wakeup_time.strftime('%Y-%m-%d %H:%M:%S')}."
+            )
+            time.sleep(sleep_duration)
+            continue
+
         logging.info("Checking for available slots...")
+
+        current_date_str = current_datetime_berlin.strftime("%Y-%m-%d")
 
         # Check cache file age to see if we should notify
         cache_is_stale = True
@@ -42,7 +65,7 @@ def main():
 
         current_available_slots = get_available_slots(settings.COURTS)
 
-        previous_available_slots = load_previous_available_slots(
+        previous_available_slots, last_run_date_str = load_previous_available_slots(
             settings.CACHE_FILE_PATH
         )
 
@@ -55,7 +78,6 @@ def main():
 
         # Filter out past slots
         future_newly_available_slots = set()
-        current_datetime_berlin = datetime.now(berlin_tz)
         for slot in newly_available_slots:
             slot_date_str, slot_time_str, _ = slot
             slot_datetime_naive = datetime.strptime(
@@ -64,6 +86,22 @@ def main():
             slot_datetime = slot_datetime_naive.replace(tzinfo=berlin_tz)
             if slot_datetime > current_datetime_berlin:
                 future_newly_available_slots.add(slot)
+
+        # On the first run of a new day, filter out slots from the last day in the window
+        if last_run_date_str and last_run_date_str < current_date_str:
+            last_day_in_window = (current_datetime_berlin + timedelta(weeks=6)).strftime(
+                "%Y-%m-%d"
+            )
+            slots_to_notify = {
+                slot
+                for slot in future_newly_available_slots
+                if slot[0] != last_day_in_window
+            }
+            if len(slots_to_notify) < len(future_newly_available_slots):
+                logging.info(
+                    f"Ignoring {len(future_newly_available_slots) - len(slots_to_notify)} slots from the last day in the window on the first run of the day."
+                )
+            future_newly_available_slots = slots_to_notify
 
         if future_newly_available_slots:
             if not cache_is_stale:
@@ -83,7 +121,9 @@ def main():
             logging.info("No new slots have become available in the future.")
 
         # Save the current state for the next run
-        save_available_slots(current_available_slots, settings.CACHE_FILE_PATH)
+        save_available_slots(
+            current_available_slots, settings.CACHE_FILE_PATH, current_date_str
+        )
 
         # Wait for the next interval
         sleep_duration = (

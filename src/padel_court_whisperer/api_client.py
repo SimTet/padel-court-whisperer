@@ -48,7 +48,9 @@ def get_slots(
         return {}
 
 
-def get_unavailable_slots_from_response(api_response: Dict[str, Any]) -> Set[Tuple[str, str, int]]:
+def get_unavailable_slots_from_response(
+    api_response: Dict[str, Any]
+) -> Set[Tuple[str, str, int]]:
     """Extracts a set of unavailable slots from the API response."""
     unavailable_slots = set()
     if api_response and "slots" in api_response:
@@ -103,7 +105,9 @@ def get_available_slots(courts: Dict[int, str]) -> Set[Tuple[str, str, int]]:
             courts,
         )
         if slots_data:
-            all_unavailable_slots.update(get_unavailable_slots_from_response(slots_data))
+            all_unavailable_slots.update(
+                get_unavailable_slots_from_response(slots_data)
+            )
 
     all_possible_slots = get_all_possible_slots(
         current_datetime_berlin, num_weeks * 7, courts
@@ -112,22 +116,41 @@ def get_available_slots(courts: Dict[int, str]) -> Set[Tuple[str, str, int]]:
     return all_possible_slots - all_unavailable_slots
 
 
-def load_previous_available_slots(cache_file: str) -> Set[Tuple[str, str, int]]:
+def load_previous_available_slots(
+    cache_file: str,
+) -> tuple[set[tuple[str, str, int]], str | None]:
     """Loads the set of available slots from a cache file and removes old entries."""
     try:
         with open(cache_file, "r") as f:
-            slots = {tuple(slot) for slot in json.load(f)}
+            data = json.load(f)
+            # Handle old cache format
+            if isinstance(data, list):
+                slots = {tuple(slot) for slot in data}
+                date_str = None
+            else:
+                slots = {tuple(slot) for slot in data.get("slots", [])}
+                date_str = data.get("date")
+
             today = datetime.now().date()
-            return {
-                slot
-                for slot in slots
-                if datetime.strptime(slot[0], "%Y-%m-%d").date() >= today
-            }
+            return (
+                {
+                    slot
+                    for slot in slots
+                    if datetime.strptime(slot[0], "%Y-%m-%d").date() >= today
+                },
+                date_str,
+            )
     except (FileNotFoundError, json.JSONDecodeError):
-        return set()
+        return set(), None
 
 
-def save_available_slots(available_slots: Set[Tuple[str, str, int]], cache_file: str):
-    """Saves the set of available slots to a cache file."""
+def save_available_slots(
+    available_slots: Set[Tuple[str, str, int]], cache_file: str, date_str: str
+):
+    """Saves the set of available slots and a date string to a cache file."""
     with open(cache_file, "w") as f:
-        json.dump(list(available_slots), f)
+        json.dump(
+            {"date": date_str, "slots": list(available_slots)},
+            f,
+            indent=4,
+        )

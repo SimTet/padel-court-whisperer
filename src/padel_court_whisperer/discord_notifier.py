@@ -24,9 +24,12 @@ def format_discord_message(
     for slot in sorted(list(future_newly_available_slots)):
         slot_date_str, slot_time_str, court_id = slot
         slot_date = datetime.strptime(slot_date_str, "%Y-%m-%d")
+        formatted_date = slot_date.strftime("%d.%m.%Y")
         weekday = slot_date.strftime("%A")
         court_name = courts.get(court_id, f"Court {court_id}")
-        message_body += f"- {weekday}, {slot_date_str}, Time: {slot_time_str}, {court_name}\n"
+        message_body += (
+            f"- {weekday}, {formatted_date}, Time: {slot_time_str}, {court_name}\n"
+        )
 
     message_body += "\nbook here: https://www.eversports.de/widget/w/kp4ruj"
     return message_body
@@ -39,7 +42,10 @@ def send_discord_message(message: str):
     Args:
         message: The message to send.
     """
-    if not settings.DISCORD_WEBHOOK_URL or settings.DISCORD_WEBHOOK_URL == "your_discord_webhook_url_here":
+    if (
+        not settings.DISCORD_WEBHOOK_URL
+        or settings.DISCORD_WEBHOOK_URL == "your_discord_webhook_url_here"
+    ):
         print("Discord webhook URL not configured. Skipping notification.")
         return
 
