@@ -35,6 +35,11 @@ def format_discord_message(
     return message_body
 
 
+def send_heartbeat_message():
+    """Sends a heartbeat message to Discord."""
+    send_discord_message("I'm awake, just didn't find any new slots.")
+
+
 def send_discord_message(message: str):
     """
     Sends a message to the Discord webhook URL from the config.

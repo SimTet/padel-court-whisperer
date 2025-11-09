@@ -12,7 +12,11 @@ from .api_client import (
     save_available_slots,
 )
 from .config import settings
-from .discord_notifier import format_discord_message, send_discord_message
+from .discord_notifier import (
+    format_discord_message,
+    send_discord_message,
+    send_heartbeat_message,
+)
 
 # Configure the logger
 logging.basicConfig(
@@ -25,11 +29,19 @@ logging.basicConfig(
 def main():
     """Main function to run the polling loop."""
     berlin_tz = ZoneInfo("Europe/Berlin")
+    last_heartbeat_date = None
+    new_slots_found_today = False
 
     # --- Main polling loop ---
     while True:
         current_datetime_berlin = datetime.now(berlin_tz)
         current_hour = current_datetime_berlin.hour
+        current_date = current_datetime_berlin.date()
+
+        # Reset heartbeat status at the beginning of a new day
+        if last_heartbeat_date and last_heartbeat_date < current_date:
+            last_heartbeat_date = None
+            new_slots_found_today = False
 
         # Pause during the night
         if current_hour >= 23 or current_hour < 6:
@@ -89,9 +101,9 @@ def main():
 
         # On the first run of a new day, filter out slots from the last day in the window
         if last_run_date_str and last_run_date_str < current_date_str:
-            last_day_in_window = (current_datetime_berlin + timedelta(weeks=6)).strftime(
-                "%Y-%m-%d"
-            )
+            last_day_in_window = (
+                current_datetime_berlin + timedelta(weeks=6)
+            ).strftime("%Y-%m-%d")
             slots_to_notify = {
                 slot
                 for slot in future_newly_available_slots
@@ -104,6 +116,7 @@ def main():
             future_newly_available_slots = slots_to_notify
 
         if future_newly_available_slots:
+            new_slots_found_today = True
             if not cache_is_stale:
                 logging.info(
                     f"Found {len(future_newly_available_slots)} newly available slots in the future!"
@@ -119,6 +132,16 @@ def main():
 
         else:
             logging.info("No new slots have become available in the future.")
+
+        # Heartbeat message at 2 PM
+        if (
+            current_hour == 14
+            and not new_slots_found_today
+            and last_heartbeat_date != current_date
+        ):
+            logging.info("Sending heartbeat message...")
+            send_heartbeat_message()
+            last_heartbeat_date = current_date
 
         # Save the current state for the next run
         save_available_slots(
